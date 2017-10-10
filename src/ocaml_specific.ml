@@ -830,7 +830,8 @@ let camlp4dir =
     String.chomp
       (My_unix.run_and_read
          (cmd ^ " -where 2>/dev/null")) in
-  try where "camlp4" with _ -> "+camlp4"
+  (* try where "camlp4" with _ -> "+camlp4" *)
+  try raise (Failure "camlp4 not found!") with _ -> "+camlp4"
 ;;
 
 ocaml_lib ~extern:true ~dir:camlp4dir ~tag_name:"use_camlp4" "camlp4lib";;
