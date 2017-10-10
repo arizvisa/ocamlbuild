@@ -57,7 +57,8 @@ let rm_f x =
 let mkdir dir =
   reset_filesys_cache_for_file dir;
   (*Sys.mkdir dir (* MISSING in ocaml *) *)
-  run ["mkdir"; dir] dir
+  (*run ["mkdir"; dir] dir *)
+  Unix.mkdir dir 0o777
 let try_mkdir dir = if not (sys_file_exists dir) then mkdir dir
 let rec mkdir_p dir =
   if sys_file_exists dir then ()
@@ -65,7 +66,8 @@ let rec mkdir_p dir =
 
 let cp_pf src dest =
   reset_filesys_cache_for_file dest;
-  run["cp";"-pf";src;dest] dest
+  (*run["cp";"-pf";src;dest] dest*)
+  Unix.link src dest
 
 (* Archive files are handled specially during copy *)
 let cp src dst =
@@ -79,9 +81,47 @@ let readlink = My_unix.readlink
 let is_link = My_unix.is_link
 let rm_rf x =
   reset_filesys_cache ();
-  run["rm";"-Rf";x] x
+  (*run["rm";"-Rf";x] x *)
+  let args = ["rm";"-Rf";x] in
+  Log.event (String.concat " " (List.map quote_filename_if_needed args)) x Tags.empty;
+  let dir = x in
+  let walk dir =
+    let rec walk acc = function
+    | [] -> acc
+    | dir :: tail -> 
+        let contents = Array.to_list (Sys.readdir dir) in
+        let contents = List.rev_map (Filename.concat dir) contents in
+        let dirs, files = List.fold_left (
+          fun (dirs, files) f -> 
+            match (Unix.stat f).st_kind with
+            | Unix.S_REG -> (dirs, f::files)
+            | Unix.S_DIR -> (f::dirs, f::files)
+            | _ -> (dirs, files)
+          ) ([], []) contents
+        in 
+        walk (files @ acc) (dirs @ tail)
+    in (walk [] [dir]) @ [dir]
+  in
+  if Sys.file_exists dir then (
+    let contents = walk dir in
+    let err = try
+        List.map (fun f ->
+            match (Unix.stat f).st_kind with
+            | Unix.S_REG -> Unix.unlink f
+            | Unix.S_DIR -> Unix.rmdir f
+            | _ -> ()         (* FIXME: Warn if unable to remove specific file type *)
+        ) contents; None 
+      with Unix.Unix_error (error,_,_) -> Some error
+    in
+    match err with
+    | Some error ->
+        failwith (Printf.sprintf "Cannot remove %s (error %s)." dir (Unix.error_message error))
+    | None -> ()
+  )
+
 let mv src dest =
   reset_filesys_cache_for_file src;
   reset_filesys_cache_for_file dest;
-  run["mv"; src; dest] dest
+  (*run["mv"; src; dest] dest *)
   (*Sys.rename src dest*)
+  Unix.rename src dest
